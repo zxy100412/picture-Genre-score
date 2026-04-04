@@ -1,6 +1,19 @@
 # ==============================================
-# 1. 保留所有核心依赖，删除Flask相关导入
+# 保留所有核心依赖，删除Flask相关导入
 # ==============================================
+
+"""
+================================================================
+  画作分派别视觉舒适度评价 — Web 应用
+================================================================
+说明：
+  Flask 后端，集成特征提取 + 流派分类 + 舒适度评价。
+  用户上传一张画作 → 返回流派、置信度、舒适度得分、11 个特征值。
+
+启动方式：python web_app.py
+访问地址：http://localhost:5000
+================================================================
+"""
 import os
 import io
 import json
@@ -97,10 +110,11 @@ def extract_features_from_image(img):
     gradient_smoothness = 1 - np.std(edge)
     gradient_smoothness = gradient_smoothness * 100  # 0-100
 
-    # 3. 纹理特征（GLCM）
+        # 3. 纹理特征（GLCM）→ 已修复云端报错
     gray = np.array(img.convert("L"))
+    gray = gray.astype(np.uint8)  # 必须加这一行
     glcm = graycomatrix(gray, distances=[1], angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
-                        levels=GLCM_LEVELS, symmetric=True, normed=True)
+                        levels=256, symmetric=True, normed=True)  # levels 改成 256
     glcm_avg = np.mean(glcm, axis=3)
 
     contrast = graycoprops(glcm_avg, 'contrast')[0, 0] * 10  # 0-~100
