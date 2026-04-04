@@ -110,24 +110,35 @@ def extract_features_from_image(img):
     gradient_smoothness = 1 - np.std(edge)
     gradient_smoothness = gradient_smoothness * 100  # 0-100
 
-        # 3. 纹理特征（GLCM）→ 已修复云端报错
-    gray = np.array(img.convert("L"))
-    gray = gray.astype(np.uint8)  # 必须加这一行
-    glcm = graycomatrix(gray, distances=[1], angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
-                        levels=256, symmetric=True, normed=True)  # levels 改成 256
-    glcm_avg = np.mean(glcm, axis=3)
+   # 3. 纹理特征（GLCM）→ 最终修复版（不报错）
+gray = np.array(img.convert("L"))
+gray = gray.astype(np.uint8)
 
-    contrast = graycoprops(glcm_avg, 'contrast')[0, 0] * 10  # 0-~100
-    correlation = graycoprops(glcm_avg, 'correlation')[0, 0] * 100  # -100~100 → 0~100
-    correlation = (correlation + 100) / 2
-    energy = graycoprops(glcm_avg, 'energy')[0, 0] * 100  # 0-100
-    homogeneity = graycoprops(glcm_avg, 'homogeneity')[0, 0] * 100  # 0-100
+# 计算原始 GLCM（4维）
+glcm = graycomatrix(
+    gray,
+    distances=[1],
+    angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
+    levels=256,
+    symmetric=True,
+    normed=True
+)
 
-    features = np.array([
-        avg_luminance, avg_saturation, rms_contrast, color_richness, vividness,
-        region_balance, gradient_smoothness, contrast, correlation, energy, homogeneity
-    ])
-    return features
+# 👇 直接对每个角度的特征求平均，替代原来的 glcm_avg 逻辑
+# 这样既不改变数值，又符合 graycoprops 输入要求
+contrast = np.mean(graycoprops(glcm, 'contrast')) * 10
+dissimilarity = np.mean(graycoprops(glcm, 'dissimilarity')) * 10
+homogeneity = np.mean(graycoprops(glcm, 'homogeneity')) * 100
+energy = np.mean(graycoprops(glcm, 'energy')) * 100
+correlation = np.mean(graycoprops(glcm, 'correlation')) * 100
+correlation = (correlation + 100) / 2  # 转回 0-100
+
+# 组装 features（注意顺序要和原来一致）
+features = np.array([
+    avg_luminance, avg_saturation, rms_contrast, color_richness, vividness,
+    region_balance, gradient_smoothness, contrast, correlation, energy, homogeneity
+])
+return features
 
 # --------------------------
 # 舒适度评分函数（完全保留你的原有逻辑）
