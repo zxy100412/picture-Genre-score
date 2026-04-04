@@ -7,7 +7,7 @@ pandas
 Pillow
 scikit-image
 joblib
-Flask,
+Flask
 render_template
 request
 jsonify
