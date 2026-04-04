@@ -78,24 +78,20 @@ FEATURE_NAMES = [
 # 特征提取函数（完全保留你的原有逻辑）
 # --------------------------
 def extract_features_from_image(img):
-    """从PIL图像提取11个视觉特征，完全保留原有逻辑"""
-    # 图像预处理
     img = img.convert("RGB").resize(TARGET_SIZE)
     img_np = np.array(img) / 255.0
 
-    # 1. 颜色特征（LAB空间）
     from skimage.color import rgb2lab
     lab = rgb2lab(img_np)
     L, A, B = lab[:,:,0], lab[:,:,1], lab[:,:,2]
 
-    avg_luminance = np.mean(L)  # 0-100
-    avg_saturation = np.mean(np.sqrt(A**2 + B**2))  # 0-~100
-    rms_contrast = np.std(L)  # 0-~100
+    avg_luminance = np.mean(L)
+    avg_saturation = np.mean(np.sqrt(A**2 + B**2))
+    rms_contrast = np.std(L)
     color_variance = np.var(A) + np.var(B)
-    color_richness = np.sqrt(color_variance)  # 0-~100
-    vividness = np.mean(np.abs(A) + np.abs(B))  # 0-~100
+    color_richness = np.sqrt(color_variance)
+    vividness = np.mean(np.abs(A) + np.abs(B))
 
-    # 2. 空间特征
     h, w = img_np.shape[:2]
     blocks = [
         img_np[:h//2, :w//2], img_np[:h//2, w//2:],
@@ -103,42 +99,37 @@ def extract_features_from_image(img):
     ]
     block_means = [np.mean(b) for b in blocks]
     region_balance = 1 - (np.max(block_means) - np.min(block_means)) / (np.max(block_means) + 1e-6)
-    region_balance = region_balance * 100  # 0-100
+    region_balance = region_balance * 100
 
     from skimage.filters import sobel
     edge = sobel(rgb2lab(img_np)[:,:,0])
     gradient_smoothness = 1 - np.std(edge)
-    gradient_smoothness = gradient_smoothness * 100  # 0-100
+    gradient_smoothness = gradient_smoothness * 100
 
-   # 3. 纹理特征（GLCM）→ 最终修复版（不报错）
-gray = np.array(img.convert("L"))
-gray = gray.astype(np.uint8)
+    gray = np.array(img.convert("L"))
+    gray = gray.astype(np.uint8)
 
-# 计算原始 GLCM（4维）
-glcm = graycomatrix(
-    gray,
-    distances=[1],
-    angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
-    levels=256,
-    symmetric=True,
-    normed=True
-)
+    glcm = graycomatrix(
+        gray,
+        distances=[1],
+        angles=[0, np.pi/4, np.pi/2, 3*np.pi/4],
+        levels=256,
+        symmetric=True,
+        normed=True
+    )
 
-# 👇 直接对每个角度的特征求平均，替代原来的 glcm_avg 逻辑
-# 这样既不改变数值，又符合 graycoprops 输入要求
-contrast = np.mean(graycoprops(glcm, 'contrast')) * 10
-dissimilarity = np.mean(graycoprops(glcm, 'dissimilarity')) * 10
-homogeneity = np.mean(graycoprops(glcm, 'homogeneity')) * 100
-energy = np.mean(graycoprops(glcm, 'energy')) * 100
-correlation = np.mean(graycoprops(glcm, 'correlation')) * 100
-correlation = (correlation + 100) / 2  # 转回 0-100
+    contrast = np.mean(graycoprops(glcm, 'contrast')) * 10
+    homogeneity = np.mean(graycoprops(glcm, 'homogeneity')) * 100
+    energy = np.mean(graycoprops(glcm, 'energy')) * 100
+    correlation = np.mean(graycoprops(glcm, 'correlation')) * 100
+    correlation = (correlation + 100) / 2
 
-# 组装 features（注意顺序要和原来一致）
-features = np.array([
-    avg_luminance, avg_saturation, rms_contrast, color_richness, vividness,
-    region_balance, gradient_smoothness, contrast, correlation, energy, homogeneity
-])
-return features
+    features = np.array([
+        avg_luminance, avg_saturation, rms_contrast, color_richness, vividness,
+        region_balance, gradient_smoothness, contrast, correlation, energy, homogeneity
+    ])
+    
+    return features
 
 # --------------------------
 # 舒适度评分函数（完全保留你的原有逻辑）
