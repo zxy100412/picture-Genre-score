@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import os
-import io
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -140,7 +139,6 @@ def extract_features_from_image(pil_img):
     L = img_lab[:, :, 0]
     a = img_lab[:, :, 1]
     b = img_lab[:, :, 2]
-    N = L.size
 
     mean_L = np.mean(L)
     chroma = np.sqrt(a ** 2 + b ** 2)
@@ -196,7 +194,6 @@ def extract_features_from_image(pil_img):
 GENRE_WEIGHTS = {}
 GENRE_TOPSIS_REF = {}
 
-@st.cache_resource
 def load_weights_and_refs():
     if os.path.exists(WEIGHTS_CSV):
         wdf = pd.read_csv(WEIGHTS_CSV, index_col=0)
@@ -246,15 +243,15 @@ def compute_comfort_score(features, genre):
         score = round(float(np.sum(v)) * 100, 2)
     return score, normalized
 
-# ===================== 模型加载【原样】======================
-@st.cache_resource
+# ===================== 模型加载【修复版】======================
 def load_model():
-    model_data = joblib.load(MODEL_PATH)
+    import pickle
+    with open(MODEL_PATH, 'rb') as f:
+        model_data = pickle.load(f)
     model = model_data['model']
     label_encoder = model_data['label_encoder']
     return model, label_encoder
 
-@st.cache_resource
 def load_genre_avg():
     df_all = pd.read_csv(FEATURES_CSV)
     genre_avg = {}
@@ -263,9 +260,9 @@ def load_genre_avg():
         genre_avg[g] = {c:round(float(d[c].mean()),4) for c in FEATURE_COLS}
     return genre_avg
 
-# ===================== 界面：1:1 还原你原本页面结构 ======================
+# ===================== 界面：1:1 还原你原本页面 ======================
 def main():
-    st.set_page_config(page_title="画作流派识别与舒适度评价", layout="wide")
+    st.set_page_config(page_title="画作分派别视觉舒适度评价系统", layout="wide")
     st.title("🎨 画作分派别视觉舒适度评价系统")
 
     load_weights_and_refs()
@@ -288,7 +285,6 @@ def main():
             comfort, norm_vals = compute_comfort_score(feats, pred_genre)
             avg_feats = genre_avg_features.get(pred_genre, {})
 
-        # ———— 以下布局完全按照你原来的页面样式 ————
         st.subheader("📊 分析结果")
         col1, col2, col3 = st.columns(3)
         col1.metric("识别流派", pred_genre)
