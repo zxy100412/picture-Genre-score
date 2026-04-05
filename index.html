@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画作分派别视觉舒适度评价</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ========== 上传页面 ========== -->
+<div id="upload-page" class="page active">
+    <div class="container">
+        <header class="header">
+            <h1>画作分派别视觉舒适度评价</h1>
+            <p class="subtitle">基于 CIE Lab 色彩空间与随机森林集成学习的智能分析系统</p>
+        </header>
+
+        <div class="upload-area" id="upload-area">
+            <div class="upload-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+            </div>
+            <p class="upload-text">将画作拖拽至此处，或 <span class="link">点击选择文件</span></p>
+            <p class="upload-hint">支持 JPG / PNG / BMP / TIFF / WebP 格式</p>
+            <input type="file" id="file-input" accept="image/*" hidden>
+        </div>
+
+        <div id="preview-area" class="preview-area" style="display:none;">
+            <img id="preview-img" src="" alt="预览">
+            <div class="preview-info">
+                <span id="file-name"></span>
+                <button id="btn-change" class="btn-text">重新选择</button>
+            </div>
+            <button id="btn-analyze" class="btn-primary">开始分析</button>
+        </div>
+
+        <div id="loading" class="loading" style="display:none;">
+            <div class="spinner"></div>
+            <p>正在分析中，请稍候...</p>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 结果页面 ========== -->
+<div id="result-page" class="page">
+    <div class="container">
+        <header class="header">
+            <h1>画作分派别视觉舒适度评价</h1>
+            <button id="btn-back" class="btn-text header-btn">&larr; 返回上传新画作</button>
+        </header>
+
+        <div class="result-layout">
+            <!-- 左侧：图片 + 核心结果 -->
+            <div class="result-left">
+                <div class="card image-card">
+                    <img id="result-img" src="" alt="画作">
+                </div>
+
+                <div class="card genre-card">
+                    <div class="genre-label">识别流派</div>
+                    <div class="genre-name" id="result-genre"></div>
+                    <div class="confidence-row">
+                        <span class="conf-label">分类置信度</span>
+                        <span class="conf-value" id="result-confidence"></span>
+                    </div>
+                    <div class="conf-bar-bg"><div class="conf-bar" id="conf-bar"></div></div>
+                    <div id="low-conf-warning" class="warning" style="display:none;">
+                        ⚠ 置信度不足 70%，分类结果仅供参考
+                    </div>
+                </div>
+
+                <div class="card comfort-card">
+                    <div class="comfort-label">视觉舒适度得分</div>
+                    <div class="comfort-score" id="result-comfort"></div>
+                    <div class="comfort-bar-bg"><div class="comfort-bar" id="comfort-bar"></div></div>
+                    <div class="comfort-desc" id="comfort-desc"></div>
+                </div>
+            </div>
+
+            <!-- 右侧：特征详情 + 雷达图 -->
+            <div class="result-right">
+                <div class="card">
+                    <h3 class="card-title">特征雷达图</h3>
+                    <p class="card-desc">蓝色 = 本画作 &nbsp;|&nbsp; 灰色 = 该流派平均值</p>
+                    <div class="radar-container">
+                        <canvas id="radar-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">11 项量化特征</h3>
+                    <table class="feature-table" id="feature-table">
+                        <thead>
+                            <tr>
+                                <th>指标类型</th>
+                                <th>指标名称</th>
+                                <th>本画作</th>
+                                <th>流派平均</th>
+                            </tr>
+                        </thead>
+                        <tbody id="feature-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== 交互逻辑 ==========
+
+const uploadArea = document.getElementById('upload-area');
+const fileInput = document.getElementById('file-input');
+const previewArea = document.getElementById('preview-area');
+const previewImg = document.getElementById('preview-img');
+const fileName = document.getElementById('file-name');
+const btnAnalyze = document.getElementById('btn-analyze');
+const btnChange = document.getElementById('btn-change');
+const btnBack = document.getElementById('btn-back');
+const loading = document.getElementById('loading');
+const uploadPage = document.getElementById('upload-page');
+const resultPage = document.getElementById('result-page');
+
+let selectedFile = null;
+let radarChart = null;
+
+// 点击上传区域
+uploadArea.addEventListener('click', () => fileInput.click());
+
+// 拖拽
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+// 选择文件
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+// 重新选择
+btnChange.addEventListener('click', () => {
+    fileInput.value = '';
+    fileInput.click();
+});
+
+// 返回
+btnBack.addEventListener('click', () => {
+    resultPage.classList.remove('active');
+    uploadPage.classList.add('active');
+    previewArea.style.display = 'none';
+    uploadArea.style.display = '';
+    selectedFile = null;
+    fileInput.value = '';
+});
+
+function handleFile(file) {
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        previewImg.src = e.target.result;
+        fileName.textContent = file.name;
+        uploadArea.style.display = 'none';
+        previewArea.style.display = '';
+    };
+    reader.readAsDataURL(file);
+}
+
+// 开始分析
+btnAnalyze.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    loading.style.display = '';
+    btnAnalyze.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+        const resp = await fetch('/analyze', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        if (data.error) {
+            alert('分析失败: ' + data.error);
+            return;
+        }
+
+        showResult(data);
+    } catch (err) {
+        alert('网络错误: ' + err.message);
+    } finally {
+        loading.style.display = 'none';
+        btnAnalyze.disabled = false;
+    }
+});
+
+function showResult(data) {
+    // 切换页面
+    uploadPage.classList.remove('active');
+    resultPage.classList.add('active');
+
+    // 图片
+    document.getElementById('result-img').src = previewImg.src;
+
+    // 流派
+    document.getElementById('result-genre').textContent = data.genre;
+
+    // 置信度
+    const confEl = document.getElementById('result-confidence');
+    confEl.textContent = data.confidence + '%';
+    document.getElementById('conf-bar').style.width = data.confidence + '%';
+
+    // 置信度不足提示
+    const warnEl = document.getElementById('low-conf-warning');
+    if (data.low_confidence) {
+        warnEl.style.display = '';
+        confEl.classList.add('low');
+    } else {
+        warnEl.style.display = 'none';
+        confEl.classList.remove('low');
+    }
+
+    // 舒适度
+    const comfortScore = data.comfort_score;
+    document.getElementById('result-comfort').textContent = comfortScore.toFixed(1);
+    document.getElementById('comfort-bar').style.width = comfortScore + '%';
+
+    // 舒适度描述
+    let desc;
+    if (comfortScore >= 75) desc = '视觉体验优秀，色彩与构图非常和谐';
+    else if (comfortScore >= 50) desc = '视觉体验良好，整体较为舒适';
+    else if (comfortScore >= 25) desc = '视觉体验一般，部分指标偏离最优值';
+    else desc = '视觉体验较弱，色彩参数与最优值差异较大';
+    document.getElementById('comfort-desc').textContent = desc;
+
+    // 特征表格
+    const tbody = document.getElementById('feature-tbody');
+    tbody.innerHTML = '';
+    const categories = {
+        '颜色指标': ['平均亮度', '平均饱和度', 'RMS对比度', '颜色丰富度', '鲜明度'],
+        '空间指标': ['区域平衡度', '梯度平滑度'],
+        '纹理指标': ['GLCM对比度', 'GLCM相关性', 'GLCM能量', 'GLCM同质性'],
+    };
+
+    for (const [cat, feats] of Object.entries(categories)) {
+        feats.forEach((feat, i) => {
+            const tr = document.createElement('tr');
+            const val = data.features[feat];
+            const avg = data.genre_avg_features[feat] || '-';
+            tr.innerHTML = `
+                ${i === 0 ? `<td rowspan="${feats.length}" class="cat-cell">${cat}</td>` : ''}
+                <td>${feat}</td>
+                <td class="num">${typeof val === 'number' ? val.toFixed(4) : val}</td>
+                <td class="num avg">${typeof avg === 'number' ? avg.toFixed(4) : avg}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 雷达图
+    renderRadar(data);
+}
+
+function renderRadar(data) {
+    const ctx = document.getElementById('radar-chart').getContext('2d');
+
+    if (radarChart) radarChart.destroy();
+
+    // 归一化：每个特征除以 max(本画, 流派平均) 使范围 [0, 1]
+    const labels = data.feature_cols;
+    const myValues = labels.map(f => data.features[f]);
+    const avgValues = labels.map(f => data.genre_avg_features[f] || 0);
+
+    const maxVals = labels.map((_, i) => Math.max(Math.abs(myValues[i]), Math.abs(avgValues[i]), 0.001));
+    const myNorm = myValues.map((v, i) => v / maxVals[i]);
+    const avgNorm = avgValues.map((v, i) => v / maxVals[i]);
+
+    radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '本画作',
+                    data: myNorm,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.15)',
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#3b82f6',
+                },
+                {
+                    label: data.genre + '平均',
+                    data: avgNorm,
+                    borderColor: '#94a3b8',
+                    backgroundColor: 'rgba(148,163,184,0.1)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 3,
+                    pointBackgroundColor: '#94a3b8',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                r: {
+                    min: 0,
+                    max: 1.1,
+                    ticks: { display: false },
+                    pointLabels: { font: { size: 11 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                }
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 12 } } }
+            }
+        }
+    });
+}
+</script>
+
+</body>
+</html>
